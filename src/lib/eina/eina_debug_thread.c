@@ -17,8 +17,7 @@
  */
 
 #include "eina_debug.h"
-
-#ifdef EINA_HAVE_DEBUG
+#include "eina_debug_private.h"
 
 // a really simple store of currently known active threads. the mainloop is
 // special and inittied at debug init time - assuming eina inits in the
@@ -101,4 +100,3 @@ _eina_debug_thread_mainloop_set(void *th)
    pthread_t *pth = th;
    _eina_debug_thread_mainloop = *pth;
 }
-#endif
