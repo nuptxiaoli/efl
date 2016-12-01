@@ -18,15 +18,12 @@ _apply_style(Eo *obj, size_t start_pos, size_t end_pos, const char *style)
    efl_canvas_text_annotation_insert(obj, start, end, style);
 }
 
-static void
-_create_label(Eo *win, Eo *bx, const char *text,
-      size_t style_start, size_t style_end, const char *style)
+static Eo *
+_create_label(Eo *win, Eo *bx)
 {
    Eo *en;
    en = efl_add(EFL_UI_TEXT_CLASS, win);
    printf("Added Efl.Ui.Text object\n");
-   efl_text_set(en, text);
-   _apply_style(en, style_start, style_end, style);
    efl_ui_text_interactive_editable_set(en, EINA_FALSE);
    efl_canvas_text_style_set(en, NULL, "DEFAULT='align=center font=Sans font_size=10 color=#fff wrap=word'");
 
@@ -34,12 +31,14 @@ _create_label(Eo *win, Eo *bx, const char *text,
    evas_object_size_hint_align_set(en, EVAS_HINT_FILL, EVAS_HINT_FILL);
    evas_object_show(en);
    elm_box_pack_end(bx, en);
+   return en;
 }
 
 void
 test_efl_ui_text_label(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, void *event_info EINA_UNUSED)
 {
    Evas_Object *win, *bx;
+   Eo *en;
 
    win = elm_win_util_standard_add("label", "Label");
    elm_win_autodel_set(win, EINA_TRUE);
@@ -49,16 +48,18 @@ test_efl_ui_text_label(void *data EINA_UNUSED, Evas_Object *obj EINA_UNUSED, voi
    elm_win_resize_object_add(win, bx);
    evas_object_show(bx);
 
-   _create_label(win, bx,
-         "This is a small label",
-   //     012345678901234567890
-          0, 21,
-          "font_size=12 font_weight=bold");
-   _create_label(win, bx,
-         "This is a small label",
-   //     012345678901234567890
-          0, 21,
-          "font_size=12 font_weight=bold");
+   en = _create_label(win, bx);
+   efl_text_set(en, "This is a small label");
+   //                012345678901234567890
+   _apply_style(en, 0, 21, "font_size=12 font_weight=bold");
+
+   en = _create_label(win, bx);
+   efl_text_set(en, "This is a text. Is also has\n"
+         "newlines. There are several styles applied.");
+   _apply_style(en, 40, 45, "font_weight=bold color=#ff0");
+   _apply_style(en, 52, 58, "font_weight=italic color=#f00");
+   efl_canvas_text_style_set(en, NULL, "DEFAULT='align=center font=Sans font_size=12 color=#fff wrap=word'");
+
 //   elm_object_focus_set(en, EINA_TRUE);
 
    evas_object_resize(win, 480, 320);
