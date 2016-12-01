@@ -117,6 +117,9 @@ EAPI extern const Efl_Event_Description _EFL_GFX_PATH_CHANGED;
 #include "interfaces/efl_gfx_gradient_radial.eo.h"
 #include "interfaces/efl_gfx_filter.eo.h"
 #include "interfaces/efl_gfx_size_hint.eo.h"
+#include "interfaces/efl_gfx_color_class.eo.h"
+#include "interfaces/efl_gfx_text_class.eo.h"
+#include "interfaces/efl_gfx_size_class.eo.h"
 
 #include "interfaces/efl_canvas.eo.h"
 

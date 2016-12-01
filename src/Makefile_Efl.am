@@ -55,6 +55,9 @@ efl_eolian_files = \
       lib/efl/interfaces/efl_observable.eo \
       lib/efl/interfaces/efl_ui_item.eo \
       lib/efl/interfaces/efl_ui_menu.eo \
+      lib/efl/interfaces/efl_gfx_color_class.eo \
+      lib/efl/interfaces/efl_gfx_text_class.eo \
+      lib/efl/interfaces/efl_gfx_size_class.eo \
       $(efl_eolian_legacy_files) \
       $(NULL)
 

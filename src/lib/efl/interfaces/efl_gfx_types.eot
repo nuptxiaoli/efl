@@ -203,3 +203,11 @@ enum Efl.Gfx.Size.Hint.Mode {
    dont_change = 3 [[Use this mode when an object should not change its display
                      mode]]
 }
+
+enum Efl.Gfx.Color_Class.Layer {
+   normal = 0, [[Default color]]
+   outline, [[Outline color]]
+   shadow [[Shadow color]]
+}
+
+type Efl.Font.Size: int; [[Efl font size type]]
