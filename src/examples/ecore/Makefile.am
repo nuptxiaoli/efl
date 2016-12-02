@@ -65,6 +65,7 @@ ecore_evas_object_example \
 ecore_evas_wayland_multiseat_example \
 ecore_evas_window_sizes_example \
 ecore_evas_vnc_example \
+ecore_evas_cursor_example \
 ecore_event_example_01 \
 ecore_event_example_02 \
 ecore_exe_example \
@@ -233,6 +234,9 @@ ecore_evas_window_sizes_example_LDADD = $(ECORE_EVAS_COMMON_LDADD)
 ecore_evas_vnc_example_SOURCES = ecore_evas_vnc_example.c
 ecore_evas_vnc_example_LDADD = $(ECORE_EVAS_COMMON_LDADD) \
 $(top_builddir)/src/lib/ecore_input/libecore_input.la
+
+ecore_evas_cursor_example_SOURCES = ecore_evas_cursor_example.c
+ecore_evas_cursor_example_LDADD = $(ECORE_EVAS_COMMON_LDADD)
 
 ecore_event_example_01_SOURCES = ecore_event_example_01.c
 ecore_event_example_01_LDADD = $(ECORE_COMMON_LDADD)

@@ -27,6 +27,7 @@
 /ecore_evas_wayland_multiseat_example
 /ecore_evas_window_sizes_example
 /ecore_evas_vnc_example
+/ecore_evas_cursor_example
 /ecore_event_example_01
 /ecore_event_example_02
 /ecore_exe_example
