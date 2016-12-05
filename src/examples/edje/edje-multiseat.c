@@ -25,12 +25,16 @@
 #include <Ecore_Evas.h>
 #include <Edje.h>
 
+#define EDJE_EDIT_IS_UNSTABLE_AND_I_KNOW_ABOUT_IT
+#include <Edje_Edit.h>
+
 #define WIDTH  400
 #define HEIGHT 400
 
 static const char *GROUPNAME = "example/main";
 static const char *PARTNAME_KNOB1 = "example/knob1";
 static const char *PARTNAME_KNOB2 = "example/knob2";
+static const char *EDJE_FILE = PACKAGE_DATA_DIR"/multiseat.edj";
 
 static void
 _on_destroy(Ecore_Evas *ee EINA_UNUSED)
@@ -98,14 +102,30 @@ _on_rect_focus_out(void *data, const Efl_Event *event)
 }
 
 static void
-_on_key_down(void *data EINA_UNUSED, Evas *e EINA_UNUSED, Evas_Object *o, void *event_info)
+_on_key_down(void *data, Evas *e EINA_UNUSED, Evas_Object *o, void *event_info)
 {
    Evas_Event_Key_Down *ev = event_info;
+   const Evas_Modifier *mods;
    Efl_Input_Device *seat;
+   Evas *evas = data;
 
    seat = efl_input_device_seat_get(ev->dev);
    printf("Seat %s (%s) pressed key %s\n", efl_input_device_name_get(seat),
-           edje_obj_seat_name_get(o, seat), ev->key);
+          edje_obj_seat_name_get(o, seat), ev->key);
+
+   mods = evas_key_modifier_get(evas);
+   if (!strcmp(ev->key, "p") && evas_key_modifier_is_set(mods, "Control"))
+     {
+        Evas_Object *edje_edit_obj;
+
+        edje_edit_obj = edje_edit_object_add(evas);
+        if (!edje_object_file_set(edje_edit_obj, EDJE_FILE, GROUPNAME))
+          printf("failed to set file %s.\n", EDJE_FILE);
+
+        printf("EDC source code:\n%s\n",
+               edje_edit_source_generate(edje_edit_obj));
+        evas_object_del(edje_edit_obj);
+     }
 }
 
 static void
@@ -169,7 +189,6 @@ _device_added(void *data, const Efl_Event *event)
 int
 main(int argc EINA_UNUSED, char *argv[] EINA_UNUSED)
 {
-   const char *edje_file = PACKAGE_DATA_DIR"/multiseat.edj";
    const Eina_List *devices, *l;
    Evas_Object *edje_obj, *bg, *rect;
    Efl_Input_Device *dev;
@@ -199,8 +218,8 @@ main(int argc EINA_UNUSED, char *argv[] EINA_UNUSED)
 
    edje_obj = edje_object_add(evas);
 
-   if (!edje_object_file_set(edje_obj, edje_file, GROUPNAME))
-     printf("failed to set file %s.\n", edje_file);
+   if (!edje_object_file_set(edje_obj, EDJE_FILE, GROUPNAME))
+     printf("failed to set file %s.\n", EDJE_FILE);
 
    evas_object_move(edje_obj, 0, 0);
    evas_object_resize(edje_obj, WIDTH, HEIGHT);
@@ -236,7 +255,7 @@ main(int argc EINA_UNUSED, char *argv[] EINA_UNUSED)
    efl_event_callback_add(evas, EFL_CANVAS_EVENT_DEVICE_ADDED,
                           _device_added, edje_obj);
    evas_object_event_callback_add(edje_obj, EVAS_CALLBACK_KEY_DOWN,
-                                  _on_key_down, NULL);
+                                  _on_key_down, evas);
    edje_object_signal_callback_add(edje_obj, "seat,*", "",
                                    _edje_seat_cb, NULL);
    edje_object_signal_callback_add(edje_obj, "load", "",
@@ -244,6 +263,8 @@ main(int argc EINA_UNUSED, char *argv[] EINA_UNUSED)
 
    printf("Running example on evas engine %s\n",
           ecore_evas_engine_name_get(ee));
+   printf("Press 'Ctrl + p' to print EDC source code\n");
+
    ecore_evas_show(ee);
 
    ecore_main_loop_begin();
