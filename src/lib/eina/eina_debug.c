@@ -86,11 +86,6 @@ static int _module_init_opcode = EINA_DEBUG_OPCODE_INVALID;
 static unsigned int _poll_time = 0;
 static Eina_Debug_Timer_Cb _poll_timer_cb = NULL;
 
-/* Magic number used in special cases for reliability */
-#ifndef _WIN32
-static char magic[4] = { 0xDE, 0xAD, 0xBE, 0xEF };
-#endif
-
 typedef struct
 {
    const Eina_Debug_Opcode *ops;
@@ -101,19 +96,10 @@ struct _Eina_Debug_Session
 {
    Eina_Debug_Cb *cbs; /* Table of callbacks indexed by opcode id */
    Eina_List *opcode_reply_infos;
-   Eina_List *script; /* Remaining list of script lines to apply */
    Eina_Debug_Dispatch_Cb dispatch_cb; /* Session dispatcher */
-   Eina_Debug_Encode_Cb encode_cb; /* Packet encoder */
-   Eina_Debug_Decode_Cb decode_cb; /* Packet decoder */
-   double encoding_ratio; /* Encoding ratio */
    int cbs_length; /* cbs table size */
    int fd_in; /* File descriptor to read */
    int fd_out; /* File descriptor to write */
-   int max_packet_size; /* Max packet size, useful for shell */
-   short segment_sync; /* Data to send between packet segments or at the end */
-   Eina_Bool magic_on_send : 1; /* Indicator to send magic on send */
-   Eina_Bool magic_on_recv : 1; /* Indicator to expect magic on recv */
-   Eina_Bool wait_for_input : 1; /* Indicator to wait for input before continuing sending */
 };
 
 static void _opcodes_register_all();
@@ -123,8 +109,7 @@ EAPI int
 eina_debug_session_send(Eina_Debug_Session *session, int dest, int op, void *data, int size)
 {
    int total_size = 0;
-   unsigned char *buf = NULL, *data_buf = NULL;
-   int nb = -1;
+   unsigned char *buf = NULL;
 
    if (!session) return -1;
    // send protocol packet. all protocol is an int for size of packet then
@@ -138,29 +123,10 @@ eina_debug_session_send(Eina_Debug_Session *session, int dest, int op, void *dat
    hdr->opcode = op;
    hdr->cid = dest;
    if (size > 0) memcpy(buf + sizeof(Eina_Debug_Packet_Header), data, size);
-   if (session->encode_cb)
-     {
-        int new_size = 0;
-        void *new_buf = session->encode_cb(buf, total_size, &new_size);
-        buf = new_buf;
-        total_size = new_size;
-     }
 #ifndef _WIN32
-   if (session->magic_on_send) write(session->fd_out, magic, 4);
    e_debug("socket: %d / opcode %X / packet size %ld / bytes to send: %d",
          session->fd_out, op, hdr->size + sizeof(int), total_size);
-   data_buf = buf;
-   while (total_size > 0)
-     {
-        nb = write(session->fd_out, data_buf,
-              session->max_packet_size && total_size > session->max_packet_size ?
-              session->max_packet_size : total_size);
-        data_buf += nb;
-        total_size -= nb;
-        if (session->segment_sync)
-           write(session->fd_out, &(session->segment_sync), sizeof(session->segment_sync));
-     }
-   if (session->encode_cb) free(buf);
+   size = write(session->fd_out, buf, total_size);
 #endif
    return size;
 }
@@ -185,49 +151,9 @@ _monitor_service_greet()
 }
 
 #ifndef _WIN32
-/*
- * Used to consume a script line.
- * WAIT token is used to wait for input after a script line has been
- * applied.
- */
-static void
-_script_consume()
-{
-   const char *line = NULL;
-   do {
-        line = eina_list_data_get(_session->script);
-        _session->script = eina_list_remove_list(_session->script, _session->script);
-        if (line)
-          {
-             if (!strncmp(line, "WAIT", 4))
-               {
-                  e_debug("Wait for input");
-                  _session->wait_for_input = EINA_TRUE;
-                  return;
-               }
-             else if (!strncmp(line, "SLEEP_1", 7))
-               {
-                  e_debug("Sleep 1s");
-                  sleep(1);
-               }
-             else
-               {
-                  e_debug("Apply script line: %s", line);
-                  write(_session->fd_out, line, strlen(line));
-                  write(_session->fd_out, "\n", 1);
-               }
-          }
-   }
-   while (line);
-   /* When all the script has been applied, we can begin to send debug packets */
-   _monitor_service_greet();
-   _opcodes_register_all();
-}
-
 static int
 _packet_receive(unsigned char **buffer)
 {
-   double ratio = 1.0;
    int size_sz = sizeof(int);
    unsigned char *recv_buf = NULL;
    int rret;
@@ -235,35 +161,6 @@ _packet_receive(unsigned char **buffer)
 
    if (!_session) return -1;
 
-   if (_session->wait_for_input)
-     {
-        /* Wait for input */
-        char c;
-        e_debug_begin("Characters received: ");
-        while (read(_session->fd_in, &c, 1) == 1) e_debug_continue("%c", c);
-        e_debug_end();
-        _session->wait_for_input = EINA_FALSE;
-        _script_consume();
-        return 0;
-     }
-
-   if (_session->magic_on_recv)
-     {
-        /* All the bytes before the magic field have to be dropped. */
-        char c;
-        int ret, i = 0;
-        do
-          {
-             ret = read(_session->fd_in, &c, 1);
-             if (ret != 1) return 0;
-             if (c == magic[i]) i++;
-             else i = 0;
-          }
-        while (i < 4);
-        e_debug("Magic found");
-     }
-   ratio = _session->decode_cb && _session->encoding_ratio ? _session->encoding_ratio : 1.0;
-   size_sz *= ratio;
    recv_buf = malloc(size_sz);
    /*
     * Retrieve packet size
@@ -281,18 +178,11 @@ _packet_receive(unsigned char **buffer)
    e_debug("%d - %d", _session->fd_in, rret);
    if (rret == size_sz)
      {
-        int size = 0;
-        if (_session->decode_cb)
-          {
-             /* Decode the size if needed */
-             void *size_buf = _session->decode_cb(recv_buf, size_sz, NULL);
-             size = *(int *)size_buf;
-             free(size_buf);
-          }
-        else size = *(int *)recv_buf;
+        int size;
+        size = *(int *)recv_buf;
         e_debug("%d/%d - %d", getpid(), _session->fd_in, size);
         // allocate a buffer for the next bytes to receive
-        recv_buf = realloc(recv_buf, size * ratio);
+        recv_buf = realloc(recv_buf, size);
         if (recv_buf)
           {
              int cur_packet_size = sizeof(int);
@@ -301,7 +191,7 @@ _packet_receive(unsigned char **buffer)
              /* Receive all the remaining packet bytes */
              while (cur_packet_size < size)
                {
-                  while ((rret = read(_session->fd_in, recv_buf, (size - cur_packet_size) * ratio)) == -1 &&
+                  while ((rret = read(_session->fd_in, recv_buf, size - cur_packet_size)) == -1 &&
                         errno == EAGAIN);
                   if (rret <= 0)
                     {
@@ -309,23 +199,8 @@ _packet_receive(unsigned char **buffer)
                        free(packet_buf);
                        return -1;
                     }
-                  /* Decoding all the packets */
-                  if (_session->decode_cb)
-                    {
-                       int decoded_size = 0;
-                       char *decoded_buf = _session->decode_cb(recv_buf, rret, &decoded_size);
-                       if (decoded_buf && decoded_size)
-                         {
-                            memcpy(packet_buf + cur_packet_size + sizeof(int), decoded_buf, decoded_size);
-                            cur_packet_size += decoded_size;
-                            free(decoded_buf);
-                         }
-                    }
-                  else
-                    {
-                       memcpy(packet_buf + cur_packet_size, recv_buf, rret);
-                       cur_packet_size += rret;
-                    }
+                  memcpy(packet_buf + cur_packet_size, recv_buf, rret);
+                  cur_packet_size += rret;
                }
              free(recv_buf);
              if (cur_packet_size != size)
@@ -338,16 +213,6 @@ _packet_receive(unsigned char **buffer)
                }
              else
                 *buffer = packet_buf;
-             /*
-              * In case of an interactive shell, 0x0A is needed at the end of the packet to be sent
-              * So we need to retrieve it too.
-              * Magic number can't help here because we don't have it in both directions.
-              */
-             if (_session->segment_sync)
-               {
-                  char c[2];
-                  while (read(_session->fd_in, c, 2) == -1 && errno == EAGAIN);
-               }
              return cur_packet_size;
           }
         else
@@ -355,7 +220,7 @@ _packet_receive(unsigned char **buffer)
              // we couldn't allocate memory for payloa buffer
              // internal memory limit error
              e_debug("EINA DEBUG ERROR: "
-                   "Cannot allocate %u bytes for op", (unsigned int)(size * ratio));
+                   "Cannot allocate %u bytes for op", (unsigned int)size);
              return -1;
           }
      }
@@ -651,65 +516,6 @@ err:
    return NULL;
 }
 
-EAPI Eina_Debug_Session *
-eina_debug_shell_remote_connect(const char *cmd, Eina_List *script)
-{
-#ifndef _WIN32
-   int pipeToShell[2], pipeFromShell[2];
-   int pid = -1;
-   pipe(pipeToShell);
-   pipe(pipeFromShell);
-
-   pid = fork();
-   if (pid == -1) return EINA_FALSE;
-   if (!pid)
-     {
-        int i = 0;
-        const char *args[16] = { 0 };
-        char *tmp = strdup(cmd);
-        /* Child */
-        close(STDIN_FILENO);
-        dup2(pipeToShell[0], STDIN_FILENO);
-        close(STDOUT_FILENO);
-        dup2(pipeFromShell[1], STDOUT_FILENO);
-        args[i++] = tmp;
-        do
-          {
-             tmp = strchr(tmp, ' ');
-             if (tmp)
-               {
-                  *tmp = '\0';
-                  args[i++] = ++tmp;
-               }
-          }
-        while (tmp);
-        args[i++] = 0;
-        execv(args[0], (char **)args);
-        perror("execv");
-        _exit(-1);
-     }
-   else
-     {
-        Eina_Debug_Session *session = calloc(1, sizeof(*session));
-        /* Parent */
-        session->dispatch_cb = eina_debug_dispatch;
-        session->fd_in = pipeFromShell[0];
-        eina_debug_session_magic_set_on_recv(session);
-        if (fcntl(session->fd_in, F_SETFL, O_NONBLOCK) == -1) perror(0);
-        session->fd_out = pipeToShell[1];
-        session->script = script;
-        _script_consume(session);
-        // start the monitor thread
-        _thread_start(session);
-        return session;
-     }
-#else
-   (void) cmd;
-   (void) script;
-   return NULL;
-#endif
-}
-
 EAPI Eina_Bool
 eina_debug_timer_add(unsigned int timeout_ms, Eina_Debug_Timer_Cb cb)
 {
@@ -866,7 +672,7 @@ eina_debug_opcodes_register(Eina_Debug_Session *session, const Eina_Debug_Opcode
          session->opcode_reply_infos, info);
 
    //send only if _session's fd connected, if not -  it will be sent when connected
-   if(session && session->fd_in && !session->script)
+   if(session && session->fd_in)
       _opcodes_registration_send(session, info);
 }
 
@@ -890,96 +696,6 @@ eina_debug_dispatch(Eina_Debug_Session *session, void *buffer)
    else e_debug("Invalid opcode %d", opcode);
    free(buffer);
    return EINA_FALSE;
-}
-
-/*
- * Encoder for shell sessions
- * Each byte is encoded in two bytes.
- * 0x0A is appended at the end of the new buffer, as it is needed by shells
- */
-static void *
-_shell_encode_cb(const void *data, int src_size, int *dest_size)
-{
-   const char *src = data;
-   int new_size = src_size * 2;
-   char *dest = malloc(new_size);
-   int i;
-   for (i = 0; i < src_size; i++)
-     {
-        dest[(i << 1) + 0] = ((src[i] & 0xF0) >> 4) + 0x40;
-        dest[(i << 1) + 1] = ((src[i] & 0x0F) >> 0) + 0x40;
-     }
-   if (dest_size) *dest_size = new_size;
-   return dest;
-}
-
-/*
- * Decoder for shell sessions
- * Each two bytes are merged into one byte.
- * The appended 0x0A appended during encoding cannot be handled
- * in this function, as it is not a part of the packet.
- */
-static void *
-_shell_decode_cb(const void *data, int src_size, int *dest_size)
-{
-   const char *src = data;
-   int i = 0, j;
-   char *dest = malloc(src_size / 2);
-   if (!dest) goto error;
-   for (i = 0, j = 0; j < src_size; j++)
-     {
-        if ((src[j] & 0xF0) == 0x40 && (src[j + 1] & 0xF0) == 0x40)
-          {
-             dest[i++] = ((src[j] - 0x40) << 4) | ((src[j + 1] - 0x40));
-             j++;
-          }
-     }
-   goto end;
-error:
-   free(dest);
-   dest = NULL;
-end:
-   if (dest_size) *dest_size = i;
-   return dest;
-}
-
-EAPI void
-eina_debug_session_codec_hooks_add(Eina_Debug_Session *session,
-      Eina_Debug_Encode_Cb enc_cb, Eina_Debug_Decode_Cb dec_cb, double encoding_ratio)
-{
-   if (!_session) return;
-   session->encode_cb = enc_cb;
-   session->decode_cb = dec_cb;
-   session->encoding_ratio = encoding_ratio;
-}
-
-EAPI void
-eina_debug_session_basic_codec_add(Eina_Debug_Session *session, Eina_Debug_Basic_Codec codec)
-{
-   switch(codec)
-     {
-      case EINA_DEBUG_CODEC_SHELL:
-         eina_debug_session_codec_hooks_add(session, _shell_encode_cb, _shell_decode_cb, 2.0);
-         session->max_packet_size = 4000;
-         session->segment_sync = 0x0A0A;
-         break;
-      default:
-         e_debug("EINA DEBUG ERROR: Bad basic encoding");
-     }
-}
-
-EAPI void
-eina_debug_session_magic_set_on_send(Eina_Debug_Session *session)
-{
-   if (!session) return;
-   session->magic_on_send = EINA_TRUE;
-}
-
-EAPI void
-eina_debug_session_magic_set_on_recv(Eina_Debug_Session *session)
-{
-   if (!session) return;
-   session->magic_on_recv = EINA_TRUE;
 }
 
 #ifdef __linux__

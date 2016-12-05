@@ -97,30 +97,6 @@ typedef Eina_Bool (*Eina_Debug_Dispatch_Cb)(Eina_Debug_Session *session, void *b
 typedef Eina_Bool (*Eina_Debug_Timer_Cb)(void);
 
 /**
- * @typedef Eina_Debug_Encode_Cb
- *
- * Callback prototype for packet encoding
- *
- * @param buffer the buffer to encode
- * @param size the size of the given buffer
- * @param ret_size the encoded buffer size
- * @return the encoded buffer
- */
-typedef void *(*Eina_Debug_Encode_Cb)(const void *buffer, int size, int *ret_size);
-
-/**
- * @typedef Eina_Debug_Decode_Cb
- *
- * Callback prototype for packet decoding
- *
- * @param buffer the buffer to decode
- * @param size the size of the given buffer
- * @param ret_size the decoded buffer size
- * @return the decoded buffer
- */
-typedef void *(*Eina_Debug_Decode_Cb)(const void *buffer, int size, int *ret_size);
-
-/**
  * @typedef Eina_Debug_Packet_Header
  *
  * Header of Eina Debug packet
@@ -149,16 +125,6 @@ typedef struct
 } Eina_Debug_Opcode;
 
 /**
- * @enum Eina_Debug_Basic_Codec
- *
- * Predefined codecs to encode / decode buffer
- */
-typedef enum
-{
-   EINA_DEBUG_CODEC_SHELL
-} Eina_Debug_Basic_Codec;
-
-/**
  * @brief Disable debugging
  *
  * Useful for bridge to prevent a connection as slave and for the daemon.
@@ -174,19 +140,6 @@ EAPI void eina_debug_disable(void);
  * @return EINA_TRUE on success, EINA_FALSE otherwise.
  */
 EAPI Eina_Debug_Session *eina_debug_local_connect(Eina_Bool is_master);
-
-/**
- * @brief Connect to remote shell daemon
- *
- * This function executes the given command. The given script will be applied line by line until full consumption.
- * The last script command should be the execution of efl_debug_shell_bridge.
- *
- * @param cmd the command to execute
- * @param script a list of commands to apply after executing cmd
- *
- * @return EINA_TRUE on success, EINA_FALSE otherwise.
- */
-EAPI Eina_Debug_Session *eina_debug_shell_remote_connect(const char *cmd, Eina_List *script);
 
 /**
  * @brief Terminate the given session
@@ -206,47 +159,6 @@ EAPI void eina_debug_session_terminate(Eina_Debug_Session *session);
  * @disp_cb the new dispatcher for the given session
  */
 EAPI void eina_debug_session_dispatch_override(Eina_Debug_Session *session, Eina_Debug_Dispatch_Cb disp_cb);
-
-/**
- * @brief Add codec hooks on a specific session
- *
- * This function can be used to encode packets before sending and decode
- * packets during reception.
- * The encoding ratio is mostly used to determine header size on reception.
- *
- * @param session the session
- * @param enc_cb the encoding function
- * @param dec_cb the decoding function
- * @param encoding_ratio the encoding ratio
- */
-EAPI void eina_debug_session_codec_hooks_add(Eina_Debug_Session *session,
-      Eina_Debug_Encode_Cb enc_cb, Eina_Debug_Decode_Cb dec_cb, double encoding_ratio);
-
-/**
- * @brief Add a predefined codec to a session
- *
- * @param session the session
- * @param codec the codec to use
- */
-EAPI void eina_debug_session_basic_codec_add(Eina_Debug_Session *session, Eina_Debug_Basic_Codec codec);
-
-/**
- * @brief Request insertion of a magic field on sending
- *
- * This feature is needed to ensure reliability on specific connections
- *
- * @param session the session
- */
-EAPI void eina_debug_session_magic_set_on_send(Eina_Debug_Session *session);
-
-/**
- * @brief Request to look for a magic field on reception
- *
- * This feature is needed to ensure reliability on specific connections
- *
- * @param session the session
- */
-EAPI void eina_debug_session_magic_set_on_recv(Eina_Debug_Session *session);
 
 /**
  * @brief Dispatch a given packet according to its header.
